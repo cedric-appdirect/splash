@@ -204,6 +204,12 @@ inline constexpr uint32_t kApple10StagedPrefillRows = 64;
 // M4's rows, larger ones the 40-core M3 Max's; the boundary is unmeasured.
 inline constexpr uint32_t kApple9SmallGpuCores = 10;
 
+// The MoE expert tile's own boundary, which is not the rows' one: staging
+// experts measured 5.6-6.8% faster on prefill and 7-12% on decode on a 16-core
+// M4 Pro, where the small row's staged-prefill rows cost ~2% and its attention
+// split gained nothing. Wider Apple9 GPUs are unmeasured.
+inline constexpr uint32_t kApple9MoeCores = 16;
+
 inline constexpr ProjectionCalibration kApple9Projection{
     .registerSplits = TierLaw{kRegisterTiers},
     .stagedSplits = TierLaw{kApple9StagedTiers},
@@ -277,8 +283,14 @@ inline KernelCalibration KernelCalibration::of(const DeviceCapabilities &device)
   if (device.gpuClass() == GpuClass::Apple10)
     return {cores, kApple10Projection, kApple10FloatTile, kApple10Moe, kAttention};
   const bool small = cores <= kApple9SmallGpuCores;
+  // The MoE expert tile is chosen on its own measurement: staging experts pays
+  // on a 16-core M4 Pro too (5.6-6.8% faster prefill, 7-12% decode), while the
+  // small row's staged-prefill rows cost ~2% there and its attention split
+  // gained nothing, so only the MoE tile follows kApple9MoeCores.
+  const bool moeSmall = cores <= kApple9MoeCores;
   return {cores, small ? kApple9SmallProjection : kApple9Projection, kApple9FloatTile,
-          small ? kApple9SmallMoe : kApple9Moe, small ? kApple9SmallAttention : kAttention};
+          moeSmall ? kApple9SmallMoe : kApple9Moe,
+          small ? kApple9SmallAttention : kAttention};
 }
 
 } // namespace splash::ops
